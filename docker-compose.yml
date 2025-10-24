@@ -1,0 +1,163 @@
+services:
+  pgsql-db:
+    container_name: "zabbix-pgsql-db"
+    image: timescale/timescaledb:latest-pg17 #postgres:18-alpine
+    restart: always
+    volumes:
+     - db-data:/var/lib/postgresql/data
+    ports:
+     - 5432:5432
+    networks:
+     - zabbix-internal-net
+    environment:
+     POSTGRES_USER: "${POSTGRES_USER}"
+     POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+     POSTGRES_DB: "${POSTGRES_DB}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zabbix-server:
+    container_name: "zabbix-server"
+    image: zabbix/zabbix-server-pgsql:alpine-7.4-latest
+    restart: always
+    ports:
+      - 10051:10051
+    networks:
+      - zabbix-internal-net
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./zabbix/lib/psqlodbcw.so:/usr/lib/psqlodbcw.so:ro # Needed lib to zabbix monitor postgresql
+    environment:
+      ZBX_CACHESIZE: 4096M
+      ZBX_HISTORYCACHESIZE: 1024M
+      ZBX_HISTORYINDEXCACHESIZE: 1024M
+      ZBX_TRENDCACHESIZE: 1024M
+      ZBX_VALUECACHESIZE: 1024M
+      DB_SERVER_HOST: "pgsql-db"
+      DB_PORT: 5432
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+      ZBX_HISTORYSTORAGETYPES: "timescaledb"
+      ZBX_ENABLEREMOTECOMMANDS: "1"
+      #ZBX_ALLOWUNSUPPORTEDDBVERSIONS: 0
+    depends_on:
+      pgsql-db:
+        condition: service_healthy
+    stop_grace_period: 30s
+    labels:
+      com.zabbix.description: "Zabbix server with PostgreSQL database support"
+      com.zabbix.company: "Zabbix LLC"
+      com.zabbix.component: "zabbix-server"
+      com.zabbix.dbtype: "pgsql"
+      com.zabbix.os: "alpine"
+
+  zabbix-web-nginx-pgsql:
+    container_name: "zabbix-web"
+    image: zabbix/zabbix-web-nginx-pgsql:alpine-7.4-latest
+    restart: always
+    ports:
+      - 8080:8080
+      - 8443:8443
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./zabbix/cert/:/usr/share/zabbix/conf/certs/:ro
+    networks:
+      - zabbix-internal-net
+    environment:
+      ZBX_SERVER_HOST: "zabbix-server"
+      DB_SERVER_HOST: "pgsql-db"
+      DB_PORT: 5432
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+      ZBX_MEMORYLIMIT: "1024M"
+      PHP_TZ: "America/Sao_Paulo"
+    depends_on:
+      - zabbix-server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 10s
+    labels:
+      com.zabbix.description: "Zabbix frontend on Nginx web-server with PostgreSQL database support"
+      com.zabbix.company: "Zabbix LLC"
+      com.zabbix.component: "zabbix-frontend"
+      com.zabbix.webserver: "nginx"
+      com.zabbix.dbtype: "pgsql"
+      com.zabbix.os: "alpine"
+
+  zabbix-agent:
+    container_name: "zabbix-agent2"
+    image: zabbix/zabbix-agent2:alpine-7.4-latest
+    depends_on:
+      - zabbix-server
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /run/docker.sock:/var/run/docker.sock
+    environment:
+      ZBX_HOSTNAME: "zabbix-agent2"
+      ZBX_SERVER_HOST: "zabbix-server" #"172.18.0.1"
+      ZBX_ENABLEREMOTECOMMANDS: "1"
+    ports:
+      - 31999:31999
+      - 10050:10050
+    networks:
+      - zabbix-internal-net
+    stop_grace_period: 5s
+
+  zabbix-proxy:
+    container_name: "zabbix-proxy"
+    image: zabbix/zabbix-proxy-sqlite3:alpine-7.4-latest
+    depends_on:
+      - zabbix-server
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./zabbix/tmp:/tmp/zabbix:rw
+    environment:
+      ZBX_HOSTNAME: "zabbix-proxy"
+      ZBX_SERVER_HOST: "zabbix-server"
+      ZBX_ENABLEREMOTECOMMANDS: "1"
+      ZBX_DB_NAME: "/tmp/zabbix/zabbix_proxy.db"
+    ports:
+      - 10052:10052
+    networks:
+      - zabbix-internal-net
+      - monitor-net
+    stop_grace_period: 5s
+
+  grafana:
+    container_name: "grafana"
+    image: grafana/grafana:12.2
+    restart: always
+    volumes:
+     - grafana-data:/var/lib/grafana
+    user: "472:472"
+    ports:
+     - 3000:3000
+    networks:
+     - zabbix-internal-net
+     - monitor-net
+    environment:
+     GF_DEFAULT_TIMEZONE: "America/Sao_Paulo"
+     GF_PLUGINS_PREINSTALL: "alexanderzobnin-zabbix-app"
+
+networks:
+  monitor-net:
+   driver: bridge
+  zabbix-internal-net:
+   driver: bridge
+
+volumes:
+  db-data:
+  grafana-data: 
