@@ -8,10 +8,7 @@
 set -e
 
 # Create directories for files and libs
-mkdir -p ./zabbix/{lib,tmp}
-
-# Copy files to directory
-cp ./lib/psqlodbcw.so ./zabbix/lib
+mkdir -p ./zabbix/tmp
 
 # Directories permissions
 chmod 666 ./zabbix/tmp

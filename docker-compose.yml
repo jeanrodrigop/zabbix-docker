@@ -30,7 +30,6 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - ./zabbix/lib/psqlodbcw.so:/usr/lib/psqlodbcw.so:ro # Needed lib to zabbix monitor postgresql
     environment:
       ZBX_CACHESIZE: 4096M
       ZBX_HISTORYCACHESIZE: 1024M
