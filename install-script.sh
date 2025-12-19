@@ -14,7 +14,7 @@ mkdir -p ./zabbix/tmp
 chmod 666 ./zabbix/tmp
 
 # Compose docker environment
-docker compose -f ./zabbix-docker.yml up -d
+docker compose -f ./docker-compose.yml up -d
 
 # Verify docker processes
 watch -n3 "docker ps"
